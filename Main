@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Drone Range Calculator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            color: #333;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: auto;
+            padding: 20px;
+            background-color: #fff;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+        }
+
+        select, button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            border: none;
+            border-radius: 5px;
+            background-color: #f1f1f1;
+            font-size: 16px;
+        }
+
+        button {
+            cursor: pointer;
+            background-color: #007BFF;
+            color: #fff;
+            transition: background-color 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        #map {
+            width: 600px;
+            height: 600px;
+            background-color: #e0e0e0;
+            margin-top: 20px;
+            position: relative;
+            border-radius: 10px;
+            overflow: hidden;
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            grid-template-rows: repeat(12, 1fr);
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+        }
+
+        .drone-point {
+            width: 10px;
+            height: 10px;
+            background-color: #FF1A00;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10;
+        }
+
+        .legend {
+            margin-top: 20px;
+            text-align: left;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+        }
+
+        .color-indicator {
+            width: 20px;
+            height: 10px;
+            margin-right: 10px;
+        }
+
+        .distance-line {
+            width: 6px;
+            background-color: #FF1A00;
+            position: absolute;
+            bottom: 50%;
+            left: 50%;
+            transform-origin: bottom;
+        }
+
+        .popup {
+            display: none;
+            position: absolute;
+            background-color: #fff;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            z-index: 999;
+            animation: fade 0.3s ease-in-out;
+        }
+
+        @keyframes fade {
+            0% {
+                opacity: 0;
+                transform: translate(0, -10px);
+            }
+            100% {
+                opacity: 1;
+                transform: translate(0, 0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Drone Range Calculator</h1>
+        <select id="droneSelect">
+            <option value="">Select a Drone</option>
+            <option value="1">Holy Stone HS720 Foldable GPS Drone</option>
+            <option value="2.5">WingtraOne Gen II</option>
+            <option value="4">DJI Mavic Mini</option>
+            <option value="5">DJI AgRAS T30</option>
+            <option value="7">Autel Robotics EVO Drone</option>
+            <option value="8">DJI Phantom 4 Pro V2.0</option>
+            <option value="9">Autel Robotics EVO II</option>
+            <option value="10">DJI Mini 2 Fly More Combo</option>
+            <option value="15">DJI Mavic 3 Pro</option>
+            <option value="55">AgEagle eBee</option>
+        </select>
+        <div>
+            <h3>Flight Variables:</h3>
+            <input type="checkbox" id="lightRain" name="lightRain">
+            <label for="lightRain">Light Rain (10% Reduction)</label><br>
+            <input type="checkbox" id="moderateRain" name="moderateRain">
+            <label for="moderateRain">Moderate Rain (15% Reduction)</label><br>
+            <input type="checkbox" id="heavyRain" name="heavyRain">
+            <label for="heavyRain">Heavy Rain (25% Reduction)</label><br>
+            <h4>Added Thermal Camera Payload:</h4>
+            <input type="checkbox" id="payload160" name="payload" value="160">
+            <label for="payload160">160 grams</label><br>
+            <input type="checkbox" id="payload240" name="payload" value="240">
+            <label for="payload240">240 grams</label><br>
+            <input type="checkbox" id="payload500" name="payload" value="500">
+            <label for="payload500">500 grams</label><br>
+            <input type="checkbox" id="payload1000" name="payload" value="1000">
+            <label for="payload1000">1000 grams</label>
+        </div>
+        <button onclick="calculateRange()">Calculate Range</button>
+        <button onclick="clearMap()">Clear</button>
+        <div id="legend" class="legend"></div>
+        <div id="rangeDisplay"></div>
+        <div id="map">
+            <div class="drone-point"></div>
+            <div id="popup" class="popup"></div>
+        </div>
+    </div>
+
+    <script>
+        var lineColors = [
+            '#FF1A00', '#00FF1A', '#1A00FF', '#FFFF1A',
+            '#FFAA00', '#00FFAA', '#AA00FF', '#FF55AA',
+            '#AAFF00', '#00AAFF', '#FF00AA', '#AA00FF',
+            '#FF55AA', '#AAFF55', '#55AAFF', '#FFAAAA',
+            '#AAAAFF', '#FFA1A1', '#A1FFA1', '#A1A1FF'
+        ];
+        var currentColorIndex = 0;
+
+        var droneWeights = {
+            "1": 500.00,
+            "2.5": 4535.92,
+            "4": 249.00,
+            "5": 26400.00,
+            "7": 249.00,
+            "8": 1375.00,
+            "9": 1111.30,
+            "10": 249.48,
+            "15": 952.54,
+            "55": 2000.00
+        };
+
+        function calculateRange() {
+            var droneSelect = document.getElementById("droneSelect");
+            var rangeDisplay = document.getElementById("rangeDisplay");
+            var map = document.getElementById("map");
+            var legend = document.getElementById("legend");
+            var popup = document.getElementById("popup");
+            var selectedRange = parseFloat(droneSelect.value);
+            var droneName = droneSelect.options[droneSelect.selectedIndex].text;
+
+            var lightRain = document.getElementById("lightRain").checked ? 0.9 : 1;
+            var moderateRain = document.getElementById("moderateRain").checked ? 0.85 : 1;
+            var heavyRain = document.getElementById("heavyRain").checked ? 0.75 : 1;
+
+            var droneWeight = droneWeights[selectedRange.toString()];
+            var totalPayload = calculateTotalPayload();
+
+            var adjustedRange = (selectedRange * lightRain * moderateRain * heavyRain) - (totalPayload / droneWeight);
+
+            rangeDisplay.innerHTML = "Adjusted Range: " + adjustedRange.toFixed(2) + " km";
+
+            var lineColor = lineColors[currentColorIndex % lineColors.length];
+            currentColorIndex++;
+
+            var line = document.createElement("div");
+            line.className = "distance-line";
+            line.style.height = (adjustedRange / 55) * 100 + '%';
+            line.style.backgroundColor = lineColor;
+            line.style.transform = "rotate(" + Math.random() * 360 + "deg)";
+            map.appendChild(line);
+
+            var legendItem = document.createElement("div");
+            legendItem.className = "legend-item";
+            legend.appendChild(legendItem);
+
+            var colorIndicator = document.createElement("div");
+            colorIndicator.className = "color-indicator";
+            colorIndicator.style.backgroundColor = lineColor;
+            legendItem.appendChild(colorIndicator);
+
+            var droneInfo = document.createElement("div");
+            droneInfo.innerHTML = droneName + " - " + adjustedRange.toFixed(2) + " km";
+            legendItem.appendChild(droneInfo);
+
+            line.addEventListener("mouseenter", function() {
+                popup.style.display = "block";
+                popup.style.left = line.style.left;
+                popup.style.bottom = line.style.height;
+                popup.innerHTML = droneName + " - " + adjustedRange.toFixed(2) + " km";
+            });
+
+            line.addEventListener("mouseleave", function() {
+                popup.style.display = "none";
+            });
+        }
+
+        function calculateTotalPayload() {
+            var payloads = document.querySelectorAll('input[name="payload"]:checked');
+            var totalPayload = 0;
+            payloads.forEach(function(payload) {
+                totalPayload += parseInt(payload.value, 10);
+            });
+            return totalPayload;
+        }
+
+        function clearMap() {
+            var map = document.getElementById("map");
+            var legend = document.getElementById("legend");
+            var rangeDisplay = document.getElementById("rangeDisplay");
+            while (map.firstChild) {
+                map.removeChild(map.firstChild);
+            }
+            while (legend.firstChild) {
+                legend.removeChild(legend.firstChild);
+            }
+            currentColorIndex = 0;
+            rangeDisplay.innerHTML = "";
+        }
+    </script>
+</body>
+</html>
